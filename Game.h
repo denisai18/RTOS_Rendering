@@ -1,0 +1,237 @@
+/*
+ * The Game class defines the TicTacToe logic and keeps track of the game progress
+ */
+#ifndef GAME_H
+#define GAME_H
+
+class Game
+{
+  public:
+  Game()
+  {
+    initBoard();   
+  }
+  bool set(int row, int col, int val)
+  {
+    if(col >= 3 || row >= 3)
+    return false;
+    board[row][col] = val;
+    return true;
+  }
+  bool setToCurrent(int row, int col)
+  {
+     if(col >= 3 || row >= 3)
+    return false;
+    board[row][col] = currentTurn;
+    return true;
+  }
+  void newGame(bool host)
+  {
+    initBoard();  
+    hosting = host;
+    hostToken = 1;
+    clientToken = 2;
+    currentTurn = 1;
+    win = -1;
+    winPos = -1;
+    if(hosting)
+    myToken = hostToken;
+    else
+    myToken = clientToken;
+  }
+  void update()
+  {
+    turnChanged = false;
+    if(hosting)
+    {
+      winPos = checkWin();
+      if(win < 0){
+        nextTurn();
+      }
+      
+  }
+  }
+  bool host()
+  {
+    return hosting;
+  }
+  bool turnChange()
+  {
+    return turnChanged;
+  }
+  int winner()
+  {
+    return win;
+  }
+  int winPosition()
+  {
+    return winPos;
+  }
+  bool gameOver()
+  {
+    return win >= 0;
+  }
+  bool myTurn()
+  {
+    return currentTurn == myToken;
+  }
+  bool didIWin()
+  {
+    return myToken == win;
+  }
+  void setWin(char val)
+  {
+    win = val;
+  }
+  void setWinPos(char val)
+  {
+    winPos = val;
+  }
+  char get(int row, int col)
+  {
+    return board[row][col];
+  }
+  
+private:
+void initBoard()
+{
+  for(int i=0; i<3; ++i){
+    for(int j=0; j<3; ++j)
+    board[i][j] = 0;
+  }
+}
+void nextTurn()
+{
+  if(currentTurn == 1){
+        currentTurn = 2;
+      }
+      else 
+      {
+        currentTurn =1;
+      }
+    turnChanged = true;
+    }
+    
+ bool checkLine(int i, int symbol)
+{
+
+    for (int col = 0; col < 3; ++col)
+    {
+        if (board[i][col] != symbol)
+            return false;
+    }
+    return true;
+}
+bool checkCol(int i, int symbol)
+{
+
+    for (int line = 0; line < 3; ++line)
+    {
+        if (board[line][i] != symbol)
+            return false;
+    }
+    return true;
+}
+
+int checkDiag(int symbol)
+{
+    bool princ = true;
+    bool sec = true;
+    for (int i = 0; i < 3; ++i)
+    {
+
+        for (int j = 0; j < 3; ++j)
+        {
+            if (i == j)
+                if (board[i][j] != symbol)
+                    princ = false;
+            if (i == 2 - j)
+                if (board[i][j] != symbol)
+                    sec = false;
+        }
+    }
+
+    if (princ)
+        return 1;
+    if (sec)
+        return 2;
+    return 0;
+}
+int checkTie()
+{
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            if (board[i][j] == 0)
+                return 0;
+        }
+    }
+    return 99;
+}
+int checkWin()
+{
+    int tie = checkTie();
+    if (tie > 0)
+    {
+        win = 0;
+        return tie;
+
+    }
+    for (int i = 0; i < 3; ++i)
+    {
+        if (checkLine(i, hostToken))
+        {
+            win = hostToken;
+            return i;
+        }
+        if (checkLine(i, clientToken))
+        {
+            win = clientToken;
+            return i;
+        }
+
+        if (checkCol(i, hostToken))
+        {
+            win = hostToken;
+            return 3 + i;
+        }
+        if (checkCol(i, clientToken))
+        {
+            win = clientToken;
+            return 3 + i;
+        }
+        int diag = 0;
+        diag = checkDiag(hostToken);
+        if (diag != 0)
+        {
+            win = hostToken;
+            return 6 + diag;
+        }
+        diag = checkDiag(clientToken);
+        if (diag != 0)
+        {
+            win = clientToken;
+            return 6 + diag;
+        }
+
+    }
+    return -1;
+}
+
+
+char board[3][3];
+bool hosting;
+
+char hostToken;
+char clientToken;
+char currentTurn;
+char win;
+char winPos;
+bool turnChanged;
+char myToken;
+
+
+};
+
+#endif
