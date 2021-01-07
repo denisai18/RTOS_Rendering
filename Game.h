@@ -10,23 +10,34 @@ class Game
   Game()
   {
     initBoard();   
+    local = false;
   }
   bool set(int row, int col, int val)
   {
+   
     if(col >= 3 || row >= 3)
     return false;
     board[row][col] = val;
+     updated = true;
     return true;
   }
   bool setToCurrent(int row, int col)
   {
+    
      if(col >= 3 || row >= 3)
     return false;
     board[row][col] = currentTurn;
+    updated = true;
     return true;
+  }
+    void startLocal()
+  {
+    local = true;
+    newGame(false);
   }
   void newGame(bool host)
   {
+    updated = true;
     initBoard();  
     hosting = host;
     hostToken = 1;
@@ -34,19 +45,30 @@ class Game
     currentTurn = 1;
     win = -1;
     winPos = -1;
+    turnChange = true;
     if(hosting)
     myToken = hostToken;
     else
     myToken = clientToken;
   }
+  String getCurrentTurn()
+  {
+    if(currentTurn == 1)
+    return "X";
+    else
+    return "O";
+  }
   void update()
   {
     turnChanged = false;
-    if(hosting)
+    if(hosting || local)
     {
+       Serial.println("Next turn...");
       winPos = checkWin();
+      Serial.println(win);
       if(win < 0){
         nextTurn();
+       
       }
       
   }
@@ -57,7 +79,9 @@ class Game
   }
   bool turnChange()
   {
-    return turnChanged;
+    bool old = turnChanged;
+    turnChanged = false;
+    return old;
   }
   int winner()
   {
@@ -91,7 +115,15 @@ class Game
   {
     return board[row][col];
   }
-  
+
+  void rendered()
+  {
+    updated = false;
+  }
+  bool needRender()
+  {
+    return updated;
+  }
 private:
 void initBoard()
 {
@@ -219,18 +251,18 @@ int checkWin()
     return -1;
 }
 
-
 char board[3][3];
 bool hosting;
 
 char hostToken;
 char clientToken;
 char currentTurn;
-char win;
-char winPos;
+int win;
+int winPos;
 bool turnChanged;
 char myToken;
-
+bool local;
+bool updated;
 
 };
 

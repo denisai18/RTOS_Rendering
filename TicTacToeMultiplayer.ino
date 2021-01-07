@@ -19,13 +19,45 @@
 
 
 
-#include <SPI.h>
 #include <TFT_eSPI.h>   
 #include<string>
 #include<memory>
 #include "Game.h"
 Game g;
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
+#include "Keyboard.h"
+#include "TextBox.h"
+#include "Button.h"
+
+enum SystemState{
+  TYPE_SELECT,
+  LOCAL_GAME
+};
+
+
+//Type Select UI
+
+Button local(20,10,200,50,"Local game");
+Button host(20, 70,200,50,"Host game");
+Button join(20,130,200,50,"Join game");
+Button reset(140,320-40,90,30,"Reset");
+
+TextBox tb(10,10,200,20);
+xSemaphoreHandle xMutex=NULL;
+
+SystemState state = TYPE_SELECT;
+
+void localTouch()
+{
+  Serial.println("Local game...");
+  state = LOCAL_GAME;
+  g.startLocal();
+  tft.fillScreen(TFT_BLACK);
+}
+void resetTouch()
+{
+  g.startLocal();
+}
 
 void setup() {
   Serial.begin(115200);
@@ -45,26 +77,73 @@ void setup() {
 
 
   tft.fillScreen(TFT_BLACK);
-  drawBoard();
+  local.setCallback(localTouch);
+  reset.setCallback(resetTouch);
+
+//RTOS task creation
+ xMutex=xSemaphoreCreateMutex();  //xMutex will be storing NULL when Mutex not created
+  if(xMutex!=NULL) {
+  xTaskCreate(
+renderUI, /* Task function. */
+"renderUI", /* name of task. */
+10000, /* Stack size of task */
+NULL, /* parameter of the task */
+1, /* priority of the task */
+NULL); /* Task handle to keep track of created task */
+
+  xTaskCreate(
+handleInput, /* Task function. */
+"handleInput", /* name of task. */
+10000, /* Stack size of task */
+NULL, /* parameter of the task */
+1, /* priority of the task */
+NULL); /* Task handle to keep track of created task */
+}
 }
 
 bool pressing = false;
 void loop(void) {
+}
+
+void handleInput( void * parameter )
+{
+/* loop forever */
+for(;;)
+{
+  xSemaphoreTake(xMutex, portMAX_DELAY);
   uint16_t x = 0, y = 0;
   boolean pressed = tft.getTouch(&x, &y);
 
   // Draw a white spot at the detected coordinates
   if (pressed) {
     if(!pressing){
-      if(g.myTurn()){
+
+switch(state)
+{
+  case TYPE_SELECT:
+  {
+    local.processInput(x,y);
+    host.processInput(x,y);
+    join.processInput(x,y);
+  }
+  break;
+  case LOCAL_GAME:
+  {
       int row;
       int col;
+      if(!g.gameOver())
+      {
+      if(x <=240 && y <=240){
       getRowColFromPosition(x,y, row, col);
       if(g.setToCurrent(row, col))
       {
-        //send value change over the network here
+        g.update();
       }
       }
+      }
+      reset.processInput(x,y);
+  }break;
+}
     pressing = true;
 
     }
@@ -75,6 +154,59 @@ void loop(void) {
   {
     pressing = false;
   }
+  xSemaphoreGive(xMutex);
+  vTaskDelay(5);
+}
+/* delete a task when finish,
+this will never happen because this is infinity loop */
+vTaskDelete( NULL );
+}
+
+void renderUI( void * parameter )
+{
+/* loop forever */
+for(;;)
+{
+xSemaphoreTake(xMutex, portMAX_DELAY);
+/*
+tb.setText(Keys.getCurrentWord());
+tb.render(tft);
+if(Keys.requestRender()){
+  Keys.render(tft);
+}
+*/
+
+switch(state)
+{
+  case TYPE_SELECT:
+  {
+    local.render(tft);
+    host.render(tft);
+    join.render(tft);
+  }
+  break;
+  case LOCAL_GAME:
+  {
+    drawBoard();
+        if(g.turnChange())
+        {
+      tft.fillRect(0,245, 230,30,TFT_BLACK);
+      tft.setTextColor(TFT_WHITE);
+
+      tft.drawString("Current turn:" + g.getCurrentTurn(),10,245);
+        }
+        reset.render(tft);
+  }
+  break;
+}
+
+vTaskDelay(16);
+xSemaphoreGive(xMutex);
+
+}
+/* delete a task when finish,
+this will never happen because this is infinity loop */
+vTaskDelete( NULL );
 }
 
 bool isInInterval(int x, int minimum, int maximum)
@@ -105,6 +237,31 @@ void getRowColFromPosition(int x, int y, int& row, int& col)
 
 void drawBoard()
 {
+  if(!g.needRender())
+  return;
+int winCode = g.winPosition();
+int winCol = -1;
+int winRow = -1;
+int winDiag = -1;
+if (winCode >= 0)
+{
+if (winCode <= 2)
+{
+winRow = winCode;
+}
+else
+{
+if (winCode <= 5)
+{
+winCol = winCode - 3;
+}
+else
+{
+winDiag = winCode - 6;
+}
+}
+}
+  
   int w = 240/3;
   tft.fillRect(0,0,240,240,TFT_BLACK);
   for(int i=0;i<3;++i){
@@ -136,6 +293,25 @@ void drawBoard()
     }
   }
  }
+ if(winRow >= 0)
+ {
+  int y = w*winRow + w/2;
+  tft.drawLine(0,y,240,y,TFT_RED);
+ }
+ if(winCol >=0)
+ {
+  int x = w*winCol + w/2;
+  tft.drawLine(x,0,x,240,TFT_RED);
+ }
+ if(winDiag == 1)
+ {
+  tft.drawLine(0,0,240,240,TFT_RED);
+ }
+ if(winDiag == 2)
+ {
+  tft.drawLine(240,0,0,240,TFT_RED);
+ }
+ g.rendered();
 }
 
 // Code to run a screen calibration, not needed when calibration values set in setup() provided by the library
