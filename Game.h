@@ -35,21 +35,32 @@ class Game
     local = true;
     newGame(false);
   }
-  void newGame(bool host)
+  void setCurrentTurn(char val)
+  {
+    currentTurn = val;
+    turnChanged = true;
+  }
+void Reset()
+{
+initBoard();
+updated=true;
+hostToken = (char)1;
+clientToken = (char)2;
+currentTurn = (char)1;
+win = -1;
+winPos = -1;
+turnChanged = true;
+if (hosting)
+myToken = hostToken;
+else
+myToken = clientToken;
+}
+void newGame(bool host)
   {
     updated = true;
     initBoard();  
     hosting = host;
-    hostToken = 1;
-    clientToken = 2;
-    currentTurn = 1;
-    win = -1;
-    winPos = -1;
-    turnChange = true;
-    if(hosting)
-    myToken = hostToken;
-    else
-    myToken = clientToken;
+   Reset();
   }
   String getCurrentTurn()
   {
@@ -57,6 +68,10 @@ class Game
     return "X";
     else
     return "O";
+  }
+  char getTurn()
+  {
+    return currentTurn;
   }
   void update()
   {
@@ -105,11 +120,13 @@ class Game
   }
   void setWin(char val)
   {
+    updated = true;
     win = val;
   }
   void setWinPos(char val)
   {
     winPos = val;
+    Serial.println(winPos);
   }
   char get(int row, int col)
   {

@@ -22,6 +22,10 @@
 #include <TFT_eSPI.h>   
 #include<string>
 #include<memory>
+#include <WiFi.h>
+#include <WiFiMulti.h>
+
+
 #include "Game.h"
 Game g;
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
@@ -31,10 +35,18 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke custom library
 
 enum SystemState{
   TYPE_SELECT,
-  LOCAL_GAME
+  LOCAL_GAME,
+  JOIN_GAME
 };
 
+union integer {
+  int value;
+  char chrVal[4];
+};
 
+WiFiMulti WiFiMulti;
+WiFiClient client;
+bool connectedClient = false;
 //Type Select UI
 
 Button local(20,10,200,50,"Local game");
@@ -59,8 +71,31 @@ void resetTouch()
   g.startLocal();
 }
 
+void joinTouch()
+{
+  Serial.println("Join game...");
+  state = JOIN_GAME;
+  tft.fillScreen(TFT_BLACK);
+}
+
 void setup() {
   Serial.begin(115200);
+
+  WiFiMulti.addAP("CBN_SSID_2.4G", "ddm33Qxxdmfe");
+
+    Serial.println();
+    Serial.println();
+    Serial.print("Waiting for WiFi... ");
+
+    while(WiFiMulti.run() != WL_CONNECTED) {
+        Serial.print(".");
+        delay(500);
+    }
+
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
 
   tft.init();
 
@@ -79,6 +114,7 @@ void setup() {
   tft.fillScreen(TFT_BLACK);
   local.setCallback(localTouch);
   reset.setCallback(resetTouch);
+  join.setCallback(joinTouch);
 
 //RTOS task creation
  xMutex=xSemaphoreCreateMutex();  //xMutex will be storing NULL when Mutex not created
@@ -98,12 +134,192 @@ handleInput, /* Task function. */
 NULL, /* parameter of the task */
 1, /* priority of the task */
 NULL); /* Task handle to keep track of created task */
+
+  xTaskCreate(
+handleClientSocket, /* Task function. */
+"handleClientSocket", /* name of task. */
+10000, /* Stack size of task */
+NULL, /* parameter of the task */
+1, /* priority of the task */
+NULL); /* Task handle to keep track of created task */
 }
 }
 
 bool pressing = false;
 void loop(void) {
 }
+
+void SendClientTurnMessage()
+{
+  if(!connectedClient)
+  {
+    return;
+  }
+  std::vector<char> message;
+  integer messageSize;
+  messageSize.value = 2;
+  message.push_back(messageSize.chrVal[0]);
+  message.push_back(messageSize.chrVal[1]);
+  message.push_back(messageSize.chrVal[2]);
+  message.push_back(messageSize.chrVal[3]);
+  message.push_back(2);
+  message.push_back(g.getTurn());
+  client.write(message.data(), message.size());
+  
+}
+
+void SendClientMoveMessage(char x, char y)
+{
+  if(!connectedClient)
+  {
+    return;
+  }
+  std::vector<char> message;
+  integer messageSize;
+  messageSize.value = 3;
+  message.push_back(messageSize.chrVal[0]);
+  message.push_back(messageSize.chrVal[1]);
+  message.push_back(messageSize.chrVal[2]);
+  message.push_back(messageSize.chrVal[3]);
+  message.push_back(1);
+  message.push_back(x);
+  message.push_back(y);
+  client.write(message.data(), message.size());
+}
+
+void SendClientWinMessage()
+{
+  char winByte = (char)g.winner();
+  char codeByte = (char)g.winPosition();
+  std::vector<char> message;
+  integer messageSize;
+  messageSize.value = 3;
+  message.push_back(messageSize.chrVal[0]);
+  message.push_back(messageSize.chrVal[1]);
+  message.push_back(messageSize.chrVal[2]);
+  message.push_back(messageSize.chrVal[3]);
+  message.push_back(3);
+  message.push_back(winByte);
+  message.push_back(codeByte);
+ client.write(message.data(), message.size());
+}
+
+void handleMessage(std::vector<char> message)
+{
+  char type = message[0];
+
+switch (type)
+{
+case 0:
+{
+ }
+break;
+case 1:
+{
+byte xPos = message[1];
+byte yPos = message[2];
+g.setToCurrent(xPos, yPos);
+if(g.host())
+{
+g.update();
+SendClientTurnMessage();
+}
+}
+break;
+case 2:
+{
+g.setCurrentTurn((char)message[1]);
+}
+break;
+case 3:
+{
+g.setWin((char)message[1]);
+g.setWinPos((char)message[2]);
+g.update();
+}                    
+break;
+case 4:
+{
+  g.Reset();
+}
+break;
+case 5:
+{
+  //Score functionality not yet present
+}
+break;
+}
+}
+
+
+std::vector<char> message;
+std::vector<char> messageSizev;
+integer messageSize;
+int currentRead = 0;
+int currentByte = 0;
+void handleClientSocket( void * parameter)
+{
+
+/* loop forever */
+for(;;)
+{
+  if(state == JOIN_GAME)
+  {
+  xSemaphoreTake(xMutex, portMAX_DELAY);
+    const uint16_t port = 11000;
+    const char * host = "192.168.0.31";
+    if(!connectedClient){
+      if (!client.connect(host, port)) {
+        Serial.println("Connection failed.");
+        Serial.println("Waiting 5 seconds before retrying...");
+        vTaskDelay(5000);
+        
+    }
+    else
+    {
+      connectedClient=true;
+      g.newGame(false);
+    }
+    }
+    else
+    {
+      while(client.available() > 0)
+      {
+        char chr = client.read();
+        if(messageSize.value == 0)
+        {
+          messageSizev.push_back(chr);
+          currentByte++;
+          if(currentByte == 4)
+          {
+            messageSize.chrVal[0] = messageSizev[0];
+            messageSize.chrVal[1] = messageSizev[1];
+            messageSize.chrVal[2] = messageSizev[2];
+            messageSize.chrVal[3] = messageSizev[3];
+            currentByte = 0;
+            messageSizev.clear();
+          }
+        }
+        else{
+          message.push_back(chr);
+          if(message.size() == messageSize.value)
+          {
+            handleMessage(message);
+            message.clear();
+            messageSize.value =  0;
+          }
+        }
+      }
+    }
+  xSemaphoreGive(xMutex);
+}
+  vTaskDelay(10);
+}
+/* delete a task when finish,
+this will never happen because this is infinity loop */
+vTaskDelete( NULL );
+}
+
 
 void handleInput( void * parameter )
 {
@@ -125,6 +341,22 @@ switch(state)
     local.processInput(x,y);
     host.processInput(x,y);
     join.processInput(x,y);
+  }
+  break;
+  case JOIN_GAME:
+  {
+    int row;
+      int col;
+      if(!g.gameOver())
+      {
+      if(x <=240 && y <=240){
+      getRowColFromPosition(x,y, row, col);
+      if(g.setToCurrent(row, col))
+      {
+        SendClientMoveMessage(row,col);
+      }
+      }
+      }
   }
   break;
   case LOCAL_GAME:
@@ -183,6 +415,18 @@ switch(state)
     local.render(tft);
     host.render(tft);
     join.render(tft);
+  }
+  break;
+  case JOIN_GAME:
+  {
+        drawBoard();
+        if(g.turnChange())
+        {
+      tft.fillRect(0,245, 230,30,TFT_BLACK);
+      tft.setTextColor(TFT_WHITE);
+
+      tft.drawString("Current turn:" + g.getCurrentTurn(),10,245);
+        }
   }
   break;
   case LOCAL_GAME:
